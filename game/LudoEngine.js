@@ -506,6 +506,7 @@ class LudoEngine {
       useIndex = this.selectedRollIndex;
     }
 
+    const roll = this.dicePool[useIndex];
     const { movesByRollIndex } = this.getValidMovesForPool(color);
     const validTokensForRoll = movesByRollIndex[useIndex] || [];
     if (!validTokensForRoll.includes(tokenIndex)) return null;
