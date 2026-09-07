@@ -236,13 +236,10 @@ class LudoEngine {
       this.dicePool.push(roll1, roll2);
       this.canRoll = false;
 
-      const hasMoves = this.autoSelectValidRoll();
+      this.autoSelectValidRoll();
 
-      if (!hasMoves) {
-        // No complete sequence can consume ALL dice in the pool -> use none!
-        this.dicePool = [];
-        this.validMoves = [];
-        this.lastAction = { type: 'NO_VALID_MOVES', color: this.getActiveColor(), rolled: [roll1, roll2], dicePool: [] };
+      if (this.validMoves.length === 0) {
+        this.lastAction = { type: 'NO_VALID_MOVES', color: this.getActiveColor(), rolled: [roll1, roll2], dicePool: [...this.dicePool] };
       } else {
         this.lastAction = { type: 'ROLLED_DICE', color: this.getActiveColor(), rolled: [roll1, roll2], dicePool: [...this.dicePool] };
       }
@@ -279,12 +276,10 @@ class LudoEngine {
     this.canRoll = false;
 
     // Find first roll in dicePool that has valid moves
-    const hasMoves = this.autoSelectValidRoll();
+    this.autoSelectValidRoll();
 
-    if (!hasMoves) {
-      this.dicePool = [];
-      this.validMoves = [];
-      this.lastAction = { type: 'NO_VALID_MOVES', color: this.getActiveColor(), rolled: roll, dicePool: [] };
+    if (this.validMoves.length === 0) {
+      this.lastAction = { type: 'NO_VALID_MOVES', color: this.getActiveColor(), rolled: roll, dicePool: [...this.dicePool] };
     } else {
       this.lastAction = { type: 'ROLLED_NUMBER', color: this.getActiveColor(), rolled: roll, dicePool: [...this.dicePool] };
     }
@@ -292,143 +287,17 @@ class LudoEngine {
     return { roll, penalty: false, dicePool: this.dicePool, canRoll: false, validMoves: this.validMoves };
   }
 
-  canTokenMoveWithRoll(color, step, roll, hasKill) {
-    if (step === undefined || step === null || roll === undefined || roll === null) return false;
-    const outerLen = this.outerTrackLength || (this.mode === '4P' ? 51 : 71);
-    const lastSafeStep = this.mode === '4P' ? 47 : 68;
-    const killRequired = !!this.customRules.killRequiredToEnterHome;
-
-    if (step === -1) {
-      return roll === 6;
-    }
-    if (step === this.finishStep) {
-      return false; // already in home finished
-    }
-    if (step >= outerLen) {
-      return (step + roll <= this.finishStep);
-    }
-    
-    // On main perimeter track (0..outerLen-1)
-    const targetStep = step + roll;
-    if (!killRequired || hasKill) {
-      return targetStep <= this.finishStep;
-    } else {
-      if (targetStep <= lastSafeStep) {
-        return true;
-      } else if (targetStep < outerLen) {
-        const targetAbsPos = (this.startPositions[color] + targetStep) % this.trackLength;
-        return (!this.safeSpots.includes(targetAbsPos) && this.hasOpponentTokenAt(color, targetAbsPos));
-      }
-      return false;
-    }
-  }
-
-  getNextStepForToken(step, roll) {
-    if (step === -1) return 0;
-    return step + roll;
-  }
-
-  // Recursive check whether currentTokens can consume ALL dice in remainingDicePool
-  canConsumeAllDice(color, currentTokens, remainingDicePool, hasKill) {
-    if (remainingDicePool.length === 0) return true;
-
-    for (let rIdx = 0; rIdx < remainingDicePool.length; rIdx++) {
-      const roll = remainingDicePool[rIdx];
-      for (let tIdx = 0; tIdx < currentTokens.length; tIdx++) {
-        const step = currentTokens[tIdx];
-        if (this.canTokenMoveWithRoll(color, step, roll, hasKill)) {
-          const nextStep = this.getNextStepForToken(step, roll);
-          const nextTokens = [...currentTokens];
-          nextTokens[tIdx] = nextStep;
-
-          let nextHasKill = hasKill;
-          if (!hasKill && nextStep >= 0 && nextStep < this.outerTrackLength) {
-            const absPos = (this.startPositions[color] + nextStep) % this.trackLength;
-            if (!this.safeSpots.includes(absPos) && this.hasOpponentTokenAt(color, absPos)) {
-              nextHasKill = true;
-            }
-          }
-
-          const nextPool = remainingDicePool.slice(0, rIdx).concat(remainingDicePool.slice(rIdx + 1));
-          if (this.canConsumeAllDice(color, nextTokens, nextPool, nextHasKill)) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  // Get all valid (tokenIndex, rollIndex) pairs that are part of at least ONE complete sequence that uses ALL dice in this.dicePool
-  getValidMovesForPool(color) {
-    const player = this.players[color];
-    if (!player || !player.tokens || !this.dicePool || this.dicePool.length === 0) {
-      return { validFirstMoves: [], movesByRollIndex: {} };
-    }
-
-    const currentTokens = [...player.tokens];
-    const hasKill = (player.kills || 0) > 0;
-    const validFirstMoves = [];
-    const movesByRollIndex = {};
-
-    for (let rIdx = 0; rIdx < this.dicePool.length; rIdx++) {
-      movesByRollIndex[rIdx] = [];
-      const roll = this.dicePool[rIdx];
-
-      for (let tIdx = 0; tIdx < currentTokens.length; tIdx++) {
-        const step = currentTokens[tIdx];
-        if (this.canTokenMoveWithRoll(color, step, roll, hasKill)) {
-          const nextStep = this.getNextStepForToken(step, roll);
-          const nextTokens = [...currentTokens];
-          nextTokens[tIdx] = nextStep;
-
-          let nextHasKill = hasKill;
-          if (!hasKill && nextStep >= 0 && nextStep < this.outerTrackLength) {
-            const absPos = (this.startPositions[color] + nextStep) % this.trackLength;
-            if (!this.safeSpots.includes(absPos) && this.hasOpponentTokenAt(color, absPos)) {
-              nextHasKill = true;
-            }
-          }
-
-          const nextPool = this.dicePool.slice(0, rIdx).concat(this.dicePool.slice(rIdx + 1));
-          if (this.canConsumeAllDice(color, nextTokens, nextPool, nextHasKill)) {
-            validFirstMoves.push({ tokenIndex: tIdx, rollIndex: rIdx, roll });
-            if (!movesByRollIndex[rIdx].includes(tIdx)) {
-              movesByRollIndex[rIdx].push(tIdx);
-            }
-          }
-        }
-      }
-    }
-
-    return { validFirstMoves, movesByRollIndex };
-  }
-
   autoSelectValidRoll() {
     const activeColor = this.getActiveColor();
-    const { validFirstMoves, movesByRollIndex } = this.getValidMovesForPool(activeColor);
-
-    if (validFirstMoves.length === 0) {
-      this.selectedRollIndex = 0;
-      this.validMoves = [];
-      return false;
-    }
-
-    // If current selectedRollIndex has valid moves, keep it
-    if (movesByRollIndex[this.selectedRollIndex] && movesByRollIndex[this.selectedRollIndex].length > 0) {
-      this.validMoves = movesByRollIndex[this.selectedRollIndex];
-      return true;
-    }
-
-    // Otherwise select first rollIndex that has valid moves
-    for (let rIdx = 0; rIdx < this.dicePool.length; rIdx++) {
-      if (movesByRollIndex[rIdx] && movesByRollIndex[rIdx].length > 0) {
-        this.selectedRollIndex = rIdx;
-        this.validMoves = movesByRollIndex[rIdx];
+    for (let i = 0; i < this.dicePool.length; i++) {
+      const vm = this.calculateValidMoves(activeColor, this.dicePool[i]);
+      if (vm.length > 0) {
+        this.selectedRollIndex = i;
+        this.validMoves = vm;
         return true;
       }
     }
-
+    // If no remaining rolls have any valid moves
     this.selectedRollIndex = 0;
     this.validMoves = [];
     return false;
@@ -438,14 +307,22 @@ class LudoEngine {
     if (this.canRoll || this.dicePool.length === 0 || this.gameOver) return null;
 
     const activeColor = this.getActiveColor();
-    const { validFirstMoves } = this.getValidMovesForPool(activeColor);
+    const player = this.players[activeColor];
+    if (!player || !player.tokens) return null;
 
-    // Find all unique token indices that have a valid move in the current pool
-    const uniqueTokens = Array.from(new Set(validFirstMoves.map(m => m.tokenIndex)));
+    // Find all unique token indices that have a valid move with ANY remaining roll in dicePool
+    const movableTokenIndices = new Set();
+
+    this.dicePool.forEach(rollVal => {
+      const validForRoll = this.calculateValidMoves(activeColor, rollVal);
+      validForRoll.forEach(tIdx => movableTokenIndices.add(tIdx));
+    });
+
+    const uniqueMovableTokens = Array.from(movableTokenIndices);
 
     // Auto-move IF AND ONLY IF exactly 1 unique token has valid moves across all available rolls!
-    if (uniqueTokens.length === 1) {
-      return uniqueTokens[0];
+    if (uniqueMovableTokens.length === 1) {
+      return uniqueMovableTokens[0];
     }
 
     return null;
@@ -454,8 +331,7 @@ class LudoEngine {
   selectRoll(rollIndex) {
     if (rollIndex < 0 || rollIndex >= this.dicePool.length) return false;
     this.selectedRollIndex = rollIndex;
-    const { movesByRollIndex } = this.getValidMovesForPool(this.getActiveColor());
-    this.validMoves = movesByRollIndex[rollIndex] || [];
+    this.validMoves = this.calculateValidMoves(this.getActiveColor(), this.dicePool[rollIndex]);
     return true;
   }
 
@@ -475,13 +351,53 @@ class LudoEngine {
   }
 
   calculateValidMoves(color, roll) {
-    const { movesByRollIndex } = this.getValidMovesForPool(color);
-    for (let rIdx = 0; rIdx < this.dicePool.length; rIdx++) {
-      if (this.dicePool[rIdx] === roll && movesByRollIndex[rIdx]) {
-        return movesByRollIndex[rIdx];
+    const player = this.players[color];
+    if (!player || !roll) return [];
+
+    const valid = [];
+    const outerLen = this.outerTrackLength || (this.mode === '4P' ? 51 : 71);
+    const lastSafeStep = this.mode === '4P' ? 47 : 68;
+    const hasKill = ((player.kills || 0) > 0);
+    const killRequired = !!this.customRules.killRequiredToEnterHome;
+
+    player.tokens.forEach((step, tokenIndex) => {
+      if (step === -1) {
+        // Token in yard: needs 6 to enter start spot
+        if (roll === 6) {
+          valid.push(tokenIndex);
+        }
+      } else if (step >= outerLen) {
+        // Token is inside home stretch
+        if (step + roll <= this.finishStep) {
+          valid.push(tokenIndex);
+        }
+      } else {
+        // Token is on main perimeter track (0..outerLen-1)
+        const targetStep = step + roll;
+
+        if (!killRequired || hasKill) {
+          // Unrestricted home entry if kill is not required or player already has a kill
+          if (targetStep <= this.finishStep) {
+            valid.push(tokenIndex);
+          }
+        } else {
+          // Kill is required & player has 0 kills
+          if (targetStep <= lastSafeStep) {
+            // Moving up to safe square (47 in 4P, 68 in 6P) is always valid
+            valid.push(tokenIndex);
+          } else if (targetStep < outerLen) {
+            // Target is past safe square (steps 48..50 in 4P, 69..70 in 6P)
+            // Valid ONLY if landing on an opponent token to kill it!
+            const targetAbsPos = (this.startPositions[color] + targetStep) % this.trackLength;
+            if (!this.safeSpots.includes(targetAbsPos) && this.hasOpponentTokenAt(color, targetAbsPos)) {
+              valid.push(tokenIndex);
+            }
+          }
+        }
       }
-    }
-    return [];
+    });
+
+    return valid;
   }
 
   // Convert token's relative step (-1, 0..finishStep) to absolute board step (0..trackLength-1 or home identifier)
@@ -507,9 +423,8 @@ class LudoEngine {
     }
 
     const roll = this.dicePool[useIndex];
-    const { movesByRollIndex } = this.getValidMovesForPool(color);
-    const validTokensForRoll = movesByRollIndex[useIndex] || [];
-    if (!validTokensForRoll.includes(tokenIndex)) return null;
+    const currentValid = this.calculateValidMoves(color, roll);
+    if (!currentValid.includes(tokenIndex)) return null;
 
     const player = this.players[color];
     const oldStep = player.tokens[tokenIndex];
