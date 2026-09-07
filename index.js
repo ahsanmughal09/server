@@ -397,6 +397,38 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('CHAT_MESSAGE', chatItem);
   });
 
+  // Send Real-Time Reaction (No history stored)
+  socket.on('SEND_REACTION', ({ roomCode, reactionId }) => {
+    const info = roomManager.socketToRoom.get(socket.id);
+    if (!info) return;
+    const room = roomManager.rooms.get(roomCode);
+    if (!room) return;
+
+    const reactionMap = {
+      laugh: { emoji: '😂', label: 'Laugh' },
+      heart_eyes: { emoji: '😍', label: 'Heart Eyes' },
+      tongue: { emoji: '😜', label: 'Tongue Out' },
+      angry: { emoji: '😡', label: 'Angry' },
+      cry: { emoji: '😭', label: 'Cry' },
+      victory: { emoji: '🏆', label: 'Victory' }
+    };
+
+    const reaction = reactionMap[reactionId];
+    if (!reaction) return;
+
+    const senderName = room.playerSlots[info.color]?.name || info.color.toUpperCase();
+
+    // Broadcast reaction instantly to all players in room without saving to chat history
+    io.to(roomCode).emit('PLAYER_REACTED', {
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      fromColor: info.color,
+      senderName,
+      reactionId,
+      emoji: reaction.emoji,
+      label: reaction.label
+    });
+  });
+
   // Disconnect handler
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`);
