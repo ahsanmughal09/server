@@ -412,7 +412,8 @@ io.on('connection', (socket) => {
       tongue: { emoji: '😜', label: 'Tongue Out' },
       angry: { emoji: '😡', label: 'Angry' },
       cry: { emoji: '😭', label: 'Cry' },
-      victory: { emoji: '🏆', label: 'Victory' }
+      victory: { emoji: '🏆', label: 'Victory' },
+      glasses: { emoji: '😎', label: 'Show Off' }
     };
 
     const reaction = reactionMap[reactionId];
