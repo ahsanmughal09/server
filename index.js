@@ -398,11 +398,13 @@ io.on('connection', (socket) => {
   });
 
   // Send Real-Time Reaction (No history stored)
-  socket.on('SEND_REACTION', ({ roomCode, reactionId }) => {
+  socket.on('SEND_REACTION', (payload) => {
+    const { roomCode, reactionId } = payload || {};
     const info = roomManager.socketToRoom.get(socket.id);
-    if (!info) return;
     const room = roomManager.rooms.get(roomCode);
-    if (!room) return;
+    if (!room || !roomCode) return;
+
+    const fromColor = info ? info.color : (Object.keys(room.playerSlots).find(c => room.playerSlots[c]?.socketId === socket.id) || 'red');
 
     const reactionMap = {
       laugh: { emoji: '😂', label: 'Laugh' },
@@ -416,12 +418,14 @@ io.on('connection', (socket) => {
     const reaction = reactionMap[reactionId];
     if (!reaction) return;
 
-    const senderName = room.playerSlots[info.color]?.name || info.color.toUpperCase();
+    const senderName = room.playerSlots[fromColor]?.name || fromColor.toUpperCase();
+
+    console.log(`[REACTION] Room ${roomCode}: ${senderName} (${fromColor}) reacted with ${reaction.emoji}`);
 
     // Broadcast reaction instantly to all players in room without saving to chat history
     io.to(roomCode).emit('PLAYER_REACTED', {
       id: `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      fromColor: info.color,
+      fromColor,
       senderName,
       reactionId,
       emoji: reaction.emoji,
