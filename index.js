@@ -326,24 +326,27 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Send Chat
-  socket.on('SEND_CHAT', ({ roomCode, text }) => {
+  // Send Chat / Reaction Fallback
+  socket.on('SEND_CHAT', ({ roomCode, text, emote }) => {
     const info = roomManager.socketToRoom.get(socket.id);
     if (!info) return;
     const room = roomManager.rooms.get(roomCode);
     if (!room) return;
-    if (!text || !text.trim()) return;
+    if (!text && !emote) return;
 
     const playerName = room.playerSlots[info.color]?.name || info.color;
     const chatItem = {
       sender: playerName,
       color: info.color,
-      text: text.trim(),
+      text: text ? text.trim() : null,
+      emote: emote || null,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    room.chatHistory.push(chatItem);
-    if (room.chatHistory.length > 50) room.chatHistory.shift();
+    if (text) {
+      room.chatHistory.push(chatItem);
+      if (room.chatHistory.length > 50) room.chatHistory.shift();
+    }
 
     io.to(roomCode).emit('CHAT_MESSAGE', chatItem);
   });
