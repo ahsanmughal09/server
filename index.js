@@ -326,19 +326,19 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Send Chat / Reaction
-  socket.on('SEND_CHAT', ({ roomCode, text, emote }) => {
+  // Send Chat
+  socket.on('SEND_CHAT', ({ roomCode, text }) => {
     const info = roomManager.socketToRoom.get(socket.id);
     if (!info) return;
     const room = roomManager.rooms.get(roomCode);
     if (!room) return;
+    if (!text || !text.trim()) return;
 
     const playerName = room.playerSlots[info.color]?.name || info.color;
     const chatItem = {
       sender: playerName,
       color: info.color,
-      text: text || null,
-      emote: emote || null,
+      text: text.trim(),
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
