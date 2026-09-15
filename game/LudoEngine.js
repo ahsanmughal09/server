@@ -475,7 +475,7 @@ class LudoEngine {
     const gameWon = this.checkWinCondition();
     if (gameWon) {
       this.gameOver = true;
-      this.winner = this.teams[color] || color;
+      this.winner = this.players[color]?.name || color;
       return { success: true, gameOver: true, winner: this.winner, action: this.lastAction };
     }
 
