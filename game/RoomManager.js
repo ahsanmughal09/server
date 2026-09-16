@@ -1,5 +1,6 @@
 const { generateRoomCode } = require('../utils/codeGen');
 const LudoEngine = require('./LudoEngine');
+const SnakesLaddersEngine = require('./SnakesLaddersEngine');
 
 class RoomManager {
   constructor(io) {
@@ -14,8 +15,9 @@ class RoomManager {
       roomCode = generateRoomCode();
     }
 
-    const mode = settings.mode || '4P'; // '4P' or '6P'
-    const teamMode = settings.teamMode || 'solo'; // 'solo', '2v2', '3v3', '2v2v2'
+    const gameType = settings.gameType || 'ludo'; // 'ludo' or 'snakes_and_ladders'
+    const mode = gameType === 'snakes_and_ladders' ? '4P' : (settings.mode || '4P'); // '4P' or '6P'
+    const teamMode = gameType === 'snakes_and_ladders' ? 'solo' : (settings.teamMode || 'solo'); // 'solo', '2v2', '3v3', '2v2v2'
     const turnTimer = parseInt(settings.turnTimer || 30, 10);
     const diceCount = parseInt(settings.diceCount || 1, 10);
     const extraTurnOnKill = settings.extraTurnOnKill !== false;
@@ -23,7 +25,13 @@ class RoomManager {
     const killRequiredToEnterHome = settings.killRequiredToEnterHome !== false;
 
     const customRules = { diceCount, extraTurnOnKill, extraTurnOnHome, killRequiredToEnterHome };
-    const engine = new LudoEngine(mode, teamMode, turnTimer, customRules);
+    
+    let engine;
+    if (gameType === 'snakes_and_ladders') {
+      engine = new SnakesLaddersEngine(mode, teamMode, turnTimer, customRules);
+    } else {
+      engine = new LudoEngine(mode, teamMode, turnTimer, customRules);
+    }
     
     // Assign host to first color ('red')
     engine.addPlayer('red', hostSocket.id, hostName);
@@ -32,7 +40,7 @@ class RoomManager {
       code: roomCode,
       hostId: hostSocket.id,
       engine,
-      settings: { mode, teamMode, turnTimer, ...customRules },
+      settings: { gameType, mode, teamMode, turnTimer, ...customRules },
       playerSlots: this.initSlots(engine.colors, hostSocket.id, hostName),
       chatHistory: [],
       timerInterval: null,
