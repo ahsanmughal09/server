@@ -290,7 +290,7 @@ class LudoEngine {
   autoSelectValidRoll() {
     const activeColor = this.getActiveColor();
     for (let i = 0; i < this.dicePool.length; i++) {
-      const vm = this.calculateValidMoves(activeColor, this.dicePool[i]);
+      const vm = this.calculateValidMoves(activeColor, this.dicePool[i], i);
       if (vm.length > 0) {
         this.selectedRollIndex = i;
         this.validMoves = vm;
@@ -313,8 +313,8 @@ class LudoEngine {
     // Find all unique token indices that have a valid move with ANY remaining roll in dicePool
     const movableTokenIndices = new Set();
 
-    this.dicePool.forEach(rollVal => {
-      const validForRoll = this.calculateValidMoves(activeColor, rollVal);
+    this.dicePool.forEach((rollVal, rIdx) => {
+      const validForRoll = this.calculateValidMoves(activeColor, rollVal, rIdx);
       validForRoll.forEach(tIdx => movableTokenIndices.add(tIdx));
     });
 
@@ -331,14 +331,18 @@ class LudoEngine {
   selectRoll(rollIndex) {
     if (rollIndex < 0 || rollIndex >= this.dicePool.length) return false;
     this.selectedRollIndex = rollIndex;
-    this.validMoves = this.calculateValidMoves(this.getActiveColor(), this.dicePool[rollIndex]);
+    this.validMoves = this.calculateValidMoves(this.getActiveColor(), this.dicePool[rollIndex], rollIndex);
     return true;
   }
 
   hasOpponentTokenAt(myColor, absStep) {
+    return this.hasOpponentTokenAtState(this.players, myColor, absStep);
+  }
+
+  hasOpponentTokenAtState(playersState, myColor, absStep) {
     for (const c of this.colors) {
       if (c === myColor) continue;
-      const p = this.players[c];
+      const p = playersState[c];
       if (!p) continue;
       for (const step of p.tokens) {
         if (step >= 0 && step < this.outerTrackLength) {
@@ -350,8 +354,32 @@ class LudoEngine {
     return false;
   }
 
-  calculateValidMoves(color, roll) {
-    const player = this.players[color];
+  checkCaptureState(playersState, movingColor, targetMainStep) {
+    const movingTeam = this.teams[movingColor];
+
+    for (const color of this.colors) {
+      if (this.teams[color] === movingTeam) continue;
+      const otherPlayer = playersState[color];
+      if (!otherPlayer) continue;
+
+      for (let tIdx = 0; tIdx < 4; tIdx++) {
+        const step = otherPlayer.tokens[tIdx];
+        const globalPos = this.getGlobalPosition(color, step);
+
+        if (globalPos.type === 'MAIN' && globalPos.step === targetMainStep) {
+          otherPlayer.tokens[tIdx] = -1;
+          if (playersState[movingColor]) {
+            playersState[movingColor].kills = (playersState[movingColor].kills || 0) + 1;
+          }
+          return { color, tokenIndex: tIdx, oldStep: step };
+        }
+      }
+    }
+    return null;
+  }
+
+  calculateSingleMoveValidTokens(playersState, color, roll) {
+    const player = playersState[color];
     if (!player || !roll) return [];
 
     const valid = [];
@@ -389,13 +417,84 @@ class LudoEngine {
             // Target is past safe square (steps 48..50 in 4P, 69..70 in 6P)
             // Valid ONLY if landing on an opponent token to kill it!
             const targetAbsPos = (this.startPositions[color] + targetStep) % this.trackLength;
-            if (!this.safeSpots.includes(targetAbsPos) && this.hasOpponentTokenAt(color, targetAbsPos)) {
+            if (!this.safeSpots.includes(targetAbsPos) && this.hasOpponentTokenAtState(playersState, color, targetAbsPos)) {
               valid.push(tokenIndex);
             }
           }
         }
       }
     });
+
+    return valid;
+  }
+
+  canConsumeAllDice(playersState, color, dicePool) {
+    if (!dicePool || dicePool.length === 0) return true;
+
+    const player = playersState[color];
+    if (player && player.tokens && player.tokens.every(s => s === this.finishStep)) {
+      return true;
+    }
+
+    for (let i = 0; i < dicePool.length; i++) {
+      const roll = dicePool[i];
+      const validTokens = this.calculateSingleMoveValidTokens(playersState, color, roll);
+
+      for (const tIdx of validTokens) {
+        const nextState = JSON.parse(JSON.stringify(playersState));
+        const p = nextState[color];
+        const oldStep = p.tokens[tIdx];
+        const newStep = (oldStep === -1) ? 0 : (oldStep + roll);
+        p.tokens[tIdx] = newStep;
+
+        const newPos = this.getGlobalPosition(color, newStep);
+        if (newPos.type === 'MAIN' && !this.safeSpots.includes(newPos.step)) {
+          this.checkCaptureState(nextState, color, newPos.step);
+        }
+
+        const nextPool = dicePool.slice(0, i).concat(dicePool.slice(i + 1));
+        if (this.canConsumeAllDice(nextState, color, nextPool)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  calculateValidMoves(color, roll, explicitRollIndex = null) {
+    const singleValid = this.calculateSingleMoveValidTokens(this.players, color, roll);
+    if (singleValid.length === 0) return [];
+
+    if (!this.dicePool || this.dicePool.length <= 1) {
+      return singleValid;
+    }
+
+    let rIdx = explicitRollIndex;
+    if (rIdx === null || rIdx === undefined || rIdx < 0 || rIdx >= this.dicePool.length || this.dicePool[rIdx] !== roll) {
+      rIdx = this.dicePool.indexOf(roll);
+    }
+    if (rIdx === -1) return singleValid;
+
+    const remainingPool = this.dicePool.slice(0, rIdx).concat(this.dicePool.slice(rIdx + 1));
+    const valid = [];
+
+    for (const tIdx of singleValid) {
+      const nextState = JSON.parse(JSON.stringify(this.players));
+      const p = nextState[color];
+      const oldStep = p.tokens[tIdx];
+      const newStep = (oldStep === -1) ? 0 : (oldStep + roll);
+      p.tokens[tIdx] = newStep;
+
+      const newPos = this.getGlobalPosition(color, newStep);
+      if (newPos.type === 'MAIN' && !this.safeSpots.includes(newPos.step)) {
+        this.checkCaptureState(nextState, color, newPos.step);
+      }
+
+      if (this.canConsumeAllDice(nextState, color, remainingPool)) {
+        valid.push(tIdx);
+      }
+    }
 
     return valid;
   }
