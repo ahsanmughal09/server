@@ -927,6 +927,7 @@ class LudoEngine {
     }
 
     return {
+      gameType: 'ludo',
       mode: this.mode,
       teamMode: this.teamMode,
       turnTimer: this.turnTimer,

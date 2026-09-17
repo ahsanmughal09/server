@@ -15,9 +15,11 @@ class RoomManager {
       roomCode = generateRoomCode();
     }
 
-    const gameType = settings.gameType || 'ludo'; // 'ludo' or 'snakes_and_ladders'
-    const mode = gameType === 'snakes_and_ladders' ? '4P' : (settings.mode || '4P'); // '4P' or '6P'
-    const teamMode = gameType === 'snakes_and_ladders' ? 'solo' : (settings.teamMode || 'solo'); // 'solo', '2v2', '3v3', '2v2v2'
+    const gameTypeRaw = String(settings.gameType || '').toLowerCase();
+    const isSnakes = gameTypeRaw.includes('snake') || gameTypeRaw.includes('ladder');
+    const gameType = isSnakes ? 'snakes_and_ladders' : 'ludo';
+    const mode = isSnakes ? '4P' : (settings.mode || '4P'); // '4P' or '6P'
+    const teamMode = isSnakes ? 'solo' : (settings.teamMode || 'solo'); // 'solo', '2v2', '3v3', '2v2v2'
     const turnTimer = parseInt(settings.turnTimer || 30, 10);
     const diceCount = parseInt(settings.diceCount || 1, 10);
     const extraTurnOnKill = settings.extraTurnOnKill !== false;
@@ -27,7 +29,7 @@ class RoomManager {
     const customRules = { diceCount, extraTurnOnKill, extraTurnOnHome, killRequiredToEnterHome };
     
     let engine;
-    if (gameType === 'snakes_and_ladders') {
+    if (isSnakes) {
       engine = new SnakesLaddersEngine(mode, teamMode, turnTimer, customRules);
     } else {
       engine = new LudoEngine(mode, teamMode, turnTimer, customRules);
