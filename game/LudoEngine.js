@@ -431,11 +431,6 @@ class LudoEngine {
   canConsumeAllDice(playersState, color, dicePool) {
     if (!dicePool || dicePool.length === 0) return true;
 
-    const player = playersState[color];
-    if (player && player.tokens && player.tokens.every(s => s === this.finishStep)) {
-      return true;
-    }
-
     for (let i = 0; i < dicePool.length; i++) {
       const roll = dicePool[i];
       const validTokens = this.calculateSingleMoveValidTokens(playersState, color, roll);
