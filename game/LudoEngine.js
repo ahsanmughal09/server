@@ -175,6 +175,9 @@ class LudoEngine {
   rollDice(selectedDiceIndex = 0) {
     if (!this.gameStarted || this.gameOver || !this.canRoll) return null;
 
+    // Once a roll is initiated in a new turn, close appeal window for previous turn
+    this.canAppealLastTurn = false;
+
     if (!this.turnStartSnapshot) {
       this.saveTurnStartSnapshot();
     }
@@ -615,6 +618,9 @@ class LudoEngine {
     } else {
       this.nextTurn();
     }
+    // Record the active turn index for the player whose turn comes after offender
+    this.lastTurnNextIndex = this.activePlayerIndex;
+    this.lastTurnNextColor = this.getActiveColor();
   }
 
   savePreMoveSnapshot() {
@@ -755,14 +761,13 @@ class LudoEngine {
       this.hasExtraTurn = false;
       this.currentDice = null;
 
-      // Transfer active turn directly to appealing player!
-      const appealingIdx = this.colors.indexOf(appealingColor);
-      if (appealingIdx !== -1) {
-        this.activePlayerIndex = appealingIdx;
+      // Transfer active turn to the original player whose turn was after the offender!
+      if (this.lastTurnNextIndex !== null && this.lastTurnNextIndex !== undefined) {
+        this.activePlayerIndex = this.lastTurnNextIndex;
       }
       this.canRoll = true;
 
-      // Record DEMO_MOVE action for smooth 3-stage frontend animation & banner
+      // Record DEMO_MOVE action for smooth frontend animation & banner
       this.lastAction = {
         type: 'DEMO_MOVE',
         color: offendingColor,
@@ -770,8 +775,7 @@ class LudoEngine {
         oldStep: oldStep,
         targetStep: newStep,
         penalized: true,
-        appealingColor: appealingColor,
-        postMoveTokens: postMoveTokens
+        appealingColor: appealingColor
       };
 
       this.savePostMoveSnapshot();
@@ -819,6 +823,12 @@ class LudoEngine {
     this.dicePool = [];
     this.selectedRollIndex = 0;
     this.validMoves = [];
+
+    // Transfer active turn to the original player whose turn was after the offender!
+    if (this.lastTurnNextIndex !== null && this.lastTurnNextIndex !== undefined) {
+      this.activePlayerIndex = this.lastTurnNextIndex;
+    }
+    this.canRoll = true;
 
     this.savePostMoveSnapshot();
 
