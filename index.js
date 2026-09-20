@@ -106,11 +106,19 @@ io.on('connection', (socket) => {
       socket.leave(roomCode);
       if (typeof callback === 'function') callback({ success: true });
       if (!res.empty) {
+        if (res.room.engine.gameOver && res.room.timerInterval) {
+          clearInterval(res.room.timerInterval);
+        }
         io.to(res.roomCode).emit('ROOM_UPDATED', { slots: res.room.playerSlots, settings: res.room.settings });
         io.to(res.roomCode).emit('GAME_STATE_UPDATE', { state: res.room.engine.getGameState() });
+
+        const winMsg = res.room.engine.gameOver
+          ? `🎉 Match Over! ${res.room.engine.winner.toUpperCase()} declared winner as opponent(s) left!`
+          : `A player surrendered/left the room.`;
+
         io.to(res.roomCode).emit('CHAT_MESSAGE', {
           sender: 'System',
-          text: `A player surrendered/left the room.`,
+          text: winMsg,
           time: new Date().toLocaleTimeString()
         });
       }
@@ -445,8 +453,19 @@ io.on('connection', (socket) => {
     console.log(`Socket disconnected: ${socket.id}`);
     const res = roomManager.leaveRoom(socket.id);
     if (res && !res.empty) {
+      if (res.room.engine.gameOver && res.room.timerInterval) {
+        clearInterval(res.room.timerInterval);
+      }
       io.to(res.roomCode).emit('ROOM_UPDATED', { slots: res.room.playerSlots, settings: res.room.settings });
       io.to(res.roomCode).emit('GAME_STATE_UPDATE', { state: res.room.engine.getGameState() });
+
+      if (res.room.engine.gameOver) {
+        io.to(res.roomCode).emit('CHAT_MESSAGE', {
+          sender: 'System',
+          text: `🎉 Match Over! ${res.room.engine.winner.toUpperCase()} declared winner as opponent disconnected!`,
+          time: new Date().toLocaleTimeString()
+        });
+      }
     }
   });
 });

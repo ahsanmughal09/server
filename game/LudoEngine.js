@@ -131,6 +131,7 @@ class LudoEngine {
     for (const color of this.colors) {
       if (this.players[color] && this.players[color].socketId === socketId) {
         this.players[color].connected = false;
+        this.evaluateGameWinState();
         return color;
       }
     }
@@ -566,10 +567,8 @@ class LudoEngine {
     };
 
     // Check Win Condition
-    const gameWon = this.checkWinCondition();
+    const gameWon = this.evaluateGameWinState();
     if (gameWon) {
-      this.gameOver = true;
-      this.winner = this.players[color]?.name || color;
       return { success: true, gameOver: true, winner: this.winner, action: this.lastAction };
     }
 
@@ -869,18 +868,155 @@ class LudoEngine {
     return null;
   }
 
-  checkWinCondition() {
-    // Check if team of active player has completed all member tokens
-    const teamName = this.teams[this.getActiveColor()];
-    const teamColors = this.colors.filter(c => this.teams[c] === teamName);
-
-    for (const c of teamColors) {
-      const p = this.players[c];
-      if (!p) return false;
-      const allFinished = p.tokens.every(step => step === this.finishStep);
-      if (!allFinished) return false;
+  getTeamKills(teamName) {
+    let totalKills = 0;
+    for (const color of this.colors) {
+      if (this.teams[color] === teamName && this.players[color]) {
+        totalKills += (this.players[color].kills || 0);
+      }
     }
-    return true;
+    return totalKills;
+  }
+
+  checkImpossibleKillWin() {
+    if (!this.customRules.killRequiredToEnterHome) return null;
+
+    const uniqueTeams = Array.from(new Set(Object.values(this.teams)));
+    const outerLen = this.outerTrackLength || (this.mode === '4P' ? 51 : 71);
+
+    for (const teamName of uniqueTeams) {
+      const teamKills = this.getTeamKills(teamName);
+      if (teamKills === 0) {
+        // Check if ALL tokens of ALL opponent teams are in home stretch or finished
+        const opponentTeams = uniqueTeams.filter(t => t !== teamName);
+        if (opponentTeams.length === 0) continue;
+
+        let allOpponentsSafe = true;
+        for (const oppTeam of opponentTeams) {
+          const oppColors = this.colors.filter(c => this.teams[c] === oppTeam);
+          const hasPlayers = oppColors.some(c => !!this.players[c]);
+          if (!hasPlayers) continue;
+
+          for (const c of oppColors) {
+            const p = this.players[c];
+            if (!p || !p.tokens) continue;
+            const allTokensSafe = p.tokens.every(step => step >= outerLen);
+            if (!allTokensSafe) {
+              allOpponentsSafe = false;
+              break;
+            }
+          }
+          if (!allOpponentsSafe) break;
+        }
+
+        if (allOpponentsSafe) {
+          // Team `teamName` has 0 kills and 0 possibility of getting a kill!
+          // Find opponent team with highest total token progress
+          let bestOpponentTeam = null;
+          let maxProgress = -1;
+
+          for (const oppTeam of opponentTeams) {
+            const oppColors = this.colors.filter(c => this.teams[c] === oppTeam);
+            let totalProg = 0;
+            for (const c of oppColors) {
+              const p = this.players[c];
+              if (p && p.tokens) {
+                totalProg += p.tokens.reduce((acc, step) => acc + (step === -1 ? 0 : step), 0);
+              }
+            }
+            if (totalProg > maxProgress) {
+              maxProgress = totalProg;
+              bestOpponentTeam = oppTeam;
+            }
+          }
+
+          if (bestOpponentTeam) {
+            const winnerColor = this.colors.find(c => this.teams[c] === bestOpponentTeam && this.players[c]);
+            const winnerName = (this.teamMode === 'solo' && winnerColor && this.players[winnerColor])
+              ? this.players[winnerColor].name
+              : bestOpponentTeam;
+
+            return winnerName;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  checkForfeitWin() {
+    if (!this.gameStarted || this.gameOver) return null;
+
+    const connectedColors = this.colors.filter(c => this.players[c] && this.players[c].connected !== false);
+    if (connectedColors.length === 0) return null;
+
+    const connectedTeams = Array.from(new Set(connectedColors.map(c => this.teams[c])));
+    const registeredColors = Object.keys(this.players);
+    const registeredTeams = Array.from(new Set(registeredColors.map(c => this.teams[c])));
+
+    if (registeredTeams.length > 1 && connectedTeams.length === 1) {
+      const winningTeam = connectedTeams[0];
+      const winnerColor = connectedColors.find(c => this.teams[c] === winningTeam);
+      const winnerName = (this.teamMode === 'solo' && winnerColor && this.players[winnerColor])
+        ? this.players[winnerColor].name
+        : winningTeam;
+
+      return winnerName;
+    }
+
+    return null;
+  }
+
+  checkWinCondition() {
+    // 1. Standard Win Check: check if any team has completed all member tokens to finishStep
+    const uniqueTeams = Array.from(new Set(Object.values(this.teams)));
+    for (const teamName of uniqueTeams) {
+      const teamColors = this.colors.filter(c => this.teams[c] === teamName);
+      if (teamColors.length === 0) continue;
+      const hasRegisteredPlayers = teamColors.some(c => !!this.players[c]);
+      if (!hasRegisteredPlayers) continue;
+
+      let allFinished = true;
+      for (const c of teamColors) {
+        const p = this.players[c];
+        if (!p || !p.tokens.every(step => step === this.finishStep)) {
+          allFinished = false;
+          break;
+        }
+      }
+      if (allFinished) {
+        const winnerColor = teamColors.find(c => this.players[c]);
+        this.winner = (this.teamMode === 'solo' && winnerColor && this.players[winnerColor])
+          ? this.players[winnerColor].name
+          : teamName;
+        return true;
+      }
+    }
+
+    // 2. Impossible Kill Win Check
+    const impossibleKillWinner = this.checkImpossibleKillWin();
+    if (impossibleKillWinner) {
+      this.winner = impossibleKillWinner;
+      return true;
+    }
+
+    // 3. Forfeit Win Check
+    const forfeitWinner = this.checkForfeitWin();
+    if (forfeitWinner) {
+      this.winner = forfeitWinner;
+      return true;
+    }
+
+    return false;
+  }
+
+  evaluateGameWinState() {
+    if (this.gameOver) return true;
+    if (this.checkWinCondition()) {
+      this.gameOver = true;
+      return true;
+    }
+    return false;
   }
 
   nextTurn() {
