@@ -448,9 +448,52 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Voice Chat Events
+  socket.on('VOICE_STATE_UPDATE', ({ roomCode, peerId, isMuted, isConnected }) => {
+    const info = roomManager.socketToRoom.get(socket.id);
+    if (!info) return;
+    const room = roomManager.rooms.get(roomCode);
+    if (!room) return;
+
+    if (!room.voicePeers) room.voicePeers = {};
+
+    if (isConnected) {
+      room.voicePeers[info.color] = {
+        socketId: socket.id,
+        color: info.color,
+        peerId,
+        isMuted: !!isMuted
+      };
+    } else {
+      delete room.voicePeers[info.color];
+    }
+
+    io.to(roomCode).emit('VOICE_PEERS_UPDATED', {
+      voicePeers: room.voicePeers
+    });
+  });
+
+  socket.on('GET_VOICE_PEERS', ({ roomCode }, callback) => {
+    const room = roomManager.rooms.get(roomCode);
+    if (room && typeof callback === 'function') {
+      callback({ voicePeers: room.voicePeers || {} });
+    }
+  });
+
   // Disconnect handler
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`);
+    const info = roomManager.socketToRoom.get(socket.id);
+    if (info && info.roomCode) {
+      const room = roomManager.rooms.get(info.roomCode);
+      if (room && room.voicePeers && room.voicePeers[info.color]) {
+        delete room.voicePeers[info.color];
+        io.to(info.roomCode).emit('VOICE_PEERS_UPDATED', {
+          voicePeers: room.voicePeers
+        });
+      }
+    }
+
     const res = roomManager.leaveRoom(socket.id);
     if (res && !res.empty) {
       if (res.room.engine.gameOver && res.room.timerInterval) {
