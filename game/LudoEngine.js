@@ -895,6 +895,18 @@ class LudoEngine {
     const outerLen = this.outerTrackLength || (this.mode === '4P' ? 51 : 71);
 
     for (const teamName of uniqueTeams) {
+      const teamColors = this.colors.filter(c => this.teams[c] === teamName);
+      if (teamColors.length === 0) continue;
+
+      // Check if teamName has any token STILL on main track or yard (step < outerLen)
+      const hasTokensOutsideHome = teamColors.some(c => {
+        const p = this.players[c];
+        return p && p.tokens && p.tokens.some(step => step < outerLen);
+      });
+
+      // If all tokens of this team are ALREADY in home stretch or finished, this team is NOT stuck!
+      if (!hasTokensOutsideHome) continue;
+
       const teamKills = this.getTeamKills(teamName);
       if (teamKills === 0) {
         // Check if ALL tokens of ALL opponent teams are in home stretch or finished
